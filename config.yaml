@@ -1,0 +1,16 @@
+# Cấu hình ứng dụng realtime. Có thể ghi đè bằng tham số dòng lệnh (--source, --weights).
+camera:
+  # IP Webcam: http://<ip>:8080/video   |   DroidCam: http://<ip>:4747/video
+  source: "http://192.168.1.15:8080/video"
+
+models:                      # đường dẫn trọng số (tính từ thư mục gốc project)
+  cnn: weights/cnn.pt        # M1
+  transfer: weights/transfer.pt   # M2
+
+detector:                    # Haar Cascade
+  scale_factor: 1.1
+  min_neighbors: 5
+  min_size: 40               # kích thước mặt nhỏ nhất (px, trên ảnh đã thu nhỏ)
+  detect_width: 480          # thu nhỏ khung hình về chiều rộng này trước khi detect (tăng FPS)
+
+confidence_threshold: 0.5    # dưới ngưỡng: vẽ khung xám và thêm dấu "?" sau nhãn
