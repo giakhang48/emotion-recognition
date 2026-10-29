@@ -14,3 +14,6 @@ detector:                    # Haar Cascade
   detect_width: 480          # thu nhỏ khung hình về chiều rộng này trước khi detect (tăng FPS)
 
 confidence_threshold: 0.5    # dưới ngưỡng: vẽ khung xám và thêm dấu "?" sau nhãn
+
+smoothing_frames: 1          # làm mượt theo thời gian: trung bình xác suất N khung gần nhất (1 = tắt; thử 5–8)
+face_crop_scale: 1.0         # thu nhỏ khung cắt mặt quanh tâm khung Haar (1.0 = nguyên; thử 0.8–0.9 để cắt chặt hơn)

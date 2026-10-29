@@ -35,6 +35,14 @@ python src/app.py --source 0 --model cnn                             # webcam la
 ```
 
 Tuỳ chọn: `--save out.jpg|out.mp4` (lưu kết quả), `--no-show` (không mở cửa sổ), `--config`, `--weights`. Nhấn **q** để thoát.
+
+Hai tuỳ chọn giúp dự đoán realtime ổn định hơn (mặc định tắt; đặt sẵn trong `config.yaml`: `smoothing_frames`, `face_crop_scale`):
+- `--smooth N`: **làm mượt theo thời gian**, lấy trung bình xác suất softmax của N khung gần nhất cho từng khuôn mặt (ghép theo vị trí giữa các khung). Nhãn bớt nhấp nháy, đổi lại phản ứng chậm hơn ~N khung. Gợi ý N = 5–8. Không áp dụng cho ảnh tĩnh.
+- `--crop-scale S`: **thu nhỏ khung cắt mặt** quanh tâm khung Haar (1.0 = nguyên, 0.85 = cắt chặt hơn). Khung Haar thường bao cả trán và cằm, trong khi ảnh FER-2013 là mặt cắt sát; khung vẽ ra chính là vùng mô hình nhìn thấy.
+
+```bash
+python src/app.py --source http://<ip>:8081/video --model transfer --smooth 6 --crop-scale 0.85
+```
 Nếu không truyền `--source`, chương trình lấy `camera.source` trong `config.yaml` (URL không hard-code trong code).
 
 Xử lý mất kết nối: luồng camera đọc trong thread riêng; khi mất kết nối chương trình in *"Mất kết nối camera, đang thử lại..."*, hiện khung thông báo và tự kết nối lại, không crash.

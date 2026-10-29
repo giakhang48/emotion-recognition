@@ -1,16 +1,18 @@
 """Ứng dụng nhận diện cảm xúc realtime.
 Ví dụ:
-  python src/app.py --source http://192.168.1.15:8080/video --model cnn
-  python src/app.py --source test.jpg --model transfer
-  python src/app.py --source video.mp4 --model cnn
-  python src/app.py --source 0 --model cnn        (webcam laptop)
+  python3 src/app.py --source http://192.168.1.15:8080/video --model cnn
+  python3 src/app.py --source test.jpg --model transfer
+  python3 src/app.py --source video.mp4 --model cnn
+  python3 src/app.py --source 0 --model cnn        (webcam laptop)
 Nhấn 'q' để thoát."""
 import argparse
+import math
 import os
 import re
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")      # tắt log lặp lại của OpenCV khi mất kết nối
@@ -38,6 +40,12 @@ def parse_args():
     ap.add_argument("--config", default=str(ROOT / "config.yaml"))
     ap.add_argument("--weights", default=None, help="ghi đè đường dẫn trọng số trong config")
     ap.add_argument("--save", default=None, help="lưu kết quả (ảnh: .jpg/.png, video: .mp4)")
+    ap.add_argument("--smooth", type=int, default=6,
+                    help="làm mượt theo thời gian: trung bình xác suất của N khung gần nhất (1 = tắt; "
+                         "mặc định: smoothing_frames trong config.yaml)")
+    ap.add_argument("--crop-scale", type=float, default=0.85,
+                    help="hệ số thu nhỏ khung cắt mặt quanh tâm khung Haar (1.0 = giữ nguyên, 0.85 = cắt chặt hơn; "
+                         "mặc định: face_crop_scale trong config.yaml)")
     ap.add_argument("--no-show", action="store_true", help="không mở cửa sổ (chạy không có màn hình)")
     return ap.parse_args()
 
@@ -129,20 +137,69 @@ class FileReader:
         self.cap.release()
 
 
-def annotate(frame, detector, predictor, thr):
-    """Phát hiện mặt, dự đoán cảm xúc cho TẤT CẢ mặt trong khung hình, vẽ kết quả. Trả về số mặt."""
+def scale_box(box, s, shape):
+    """Thu/phóng khung (x, y, w, h) quanh tâm theo hệ số s, giới hạn trong ảnh có kích thước shape (h, w)."""
+    x, y, w, h = box
+    cx, cy, nw, nh = x + w / 2, y + h / 2, w * s, h * s
+    x0, y0 = max(0, int(round(cx - nw / 2))), max(0, int(round(cy - nh / 2)))
+    x1, y1 = min(shape[1], int(round(cx + nw / 2))), min(shape[0], int(round(cy + nh / 2)))
+    return x0, y0, x1 - x0, y1 - y0
+
+
+class FaceTracker:
+    """Làm mượt theo thời gian: ghép mỗi khuôn mặt với khuôn mặt gần nhất ở khung trước (theo khoảng cách tâm),
+    giữ N vector xác suất gần nhất của nó và lấy trung bình -> nhãn bớt nhấp nháy giữa các khung hình."""
+
+    def __init__(self, n_frames, max_missed=5):
+        self.n, self.max_missed, self.tracks = max(1, n_frames), max_missed, []
+
+    def reset(self):
+        self.tracks = []
+
+    def update(self, boxes, probs):
+        used, out = set(), []
+        for (x, y, w, h), p in zip(boxes, probs):
+            cx, cy = x + w / 2, y + h / 2
+            best, best_d = None, 0.75 * max(w, h)          # chỉ ghép nếu tâm dịch < 0.75 kích thước mặt
+            for t in self.tracks:
+                d = math.hypot(cx - t["c"][0], cy - t["c"][1])
+                if id(t) not in used and d < best_d:
+                    best, best_d = t, d
+            if best is None:
+                best = {"hist": deque(maxlen=self.n)}
+                self.tracks.append(best)
+            best.update(c=(cx, cy), missed=0)
+            best["hist"].append(p)
+            used.add(id(best))
+            out.append(np.mean(best["hist"], axis=0))
+        for t in self.tracks:
+            if id(t) not in used:
+                t["missed"] = t.get("missed", 0) + 1
+        self.tracks = [t for t in self.tracks if t["missed"] <= self.max_missed]
+        return out
+
+
+def annotate(frame, detector, predictor, thr, crop_scale=1.0, tracker=None):
+    """Phát hiện mặt, dự đoán cảm xúc cho TẤT CẢ mặt trong khung hình, vẽ kết quả. Trả về số mặt.
+    crop_scale: thu nhỏ khung cắt mặt (khung vẽ ra là đúng vùng mô hình nhìn thấy).
+    tracker: nếu có, làm mượt xác suất theo thời gian."""
     boxes, gray = detector.detect(frame)
-    crops = [gray[y:y + h, x:x + w] for x, y, w, h in boxes]
-    keep = [i for i, c in enumerate(crops) if c.size > 0]
-    results = predictor.predict_batch([crops[i] for i in keep])
-    for i, (label, conf) in zip(keep, results):
-        x, y, w, h = boxes[i]
+    boxes = [scale_box(b, crop_scale, gray.shape) for b in boxes]
+    boxes = [b for b in boxes if b[2] > 0 and b[3] > 0]
+    probs = list(predictor.proba_batch([gray[y:y + h, x:x + w] for x, y, w, h in boxes]))
+    if tracker is not None:
+        probs = tracker.update(boxes, probs)
+    for (x, y, w, h), p in zip(boxes, probs):
+        i = int(np.argmax(p))
+        label, conf = predictor.classes[i], float(p[i])
         color = COLORS.get(label, (255, 255, 255)) if conf >= thr else (150, 150, 150)  # xám = kém tin cậy
         text = f"{label.capitalize()}{'' if conf >= thr else '?'} {conf * 100:.0f}%"
         cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
         cv2.rectangle(frame, (x, max(0, y - 24)), (x + 12 * len(text) + 6, y), color, -1)
         cv2.putText(frame, text, (x + 3, max(14, y - 7)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-    return len(keep)
+    if tracker is not None and not boxes:
+        tracker.update([], [])      # khung không có mặt: tăng bộ đếm "mất dấu"
+    return len(boxes)
 
 
 def message_frame(text, size=(480, 640)):
@@ -168,8 +225,15 @@ def main():
     detector = HaarFaceDetector(d["scale_factor"], d["min_neighbors"], d["min_size"], d["detect_width"])
     predictor = EmotionPredictor(weights)
     thr = cfg["confidence_threshold"]
+    smooth = args.smooth if args.smooth is not None else cfg.get("smoothing_frames", 1)
+    crop_scale = args.crop_scale if args.crop_scale is not None else cfg.get("face_crop_scale", 1.0)
+    if smooth < 1:
+        sys.exit("--smooth phải >= 1")
+    if not 0.3 <= crop_scale <= 1.3:
+        sys.exit("--crop-scale phải nằm trong khoảng 0.3 – 1.3")
+    tracker = FaceTracker(smooth) if smooth > 1 else None
     kind = source_kind(source)
-    print(f"Model: {args.model} | nguồn: {hide_password(source)} ({kind})")
+    print(f"Model: {args.model} | nguồn: {hide_password(source)} ({kind}) | smooth={smooth} | crop_scale={crop_scale}")
 
     # ---- Chế độ ảnh tĩnh ----
     if kind == "image":
@@ -180,7 +244,7 @@ def main():
         frame = cv2.imread(str(source))
         if frame is None:
             sys.exit(f"Không đọc được ảnh (file hỏng hoặc sai định dạng): {source}")
-        n = annotate(frame, detector, predictor, thr)
+        n = annotate(frame, detector, predictor, thr, crop_scale)   # ảnh tĩnh: không làm mượt
         print(f"Phát hiện {n} khuôn mặt." if n else "Không phát hiện khuôn mặt nào.")
         if args.save:
             cv2.imwrite(args.save, frame)
@@ -212,6 +276,8 @@ def main():
                           "(dùng http://user:pass@ip:cổng/đường_dẫn).\n"
                           "  -> Đang tự thử lại mỗi 2 giây (nhấn q hoặc Ctrl+C để thoát).")
                     was_lost = True
+                if tracker is not None:
+                    tracker.reset()
                 shown = message_frame("Dang ket noi camera..." if not was_lost else "Mat ket noi camera - dang thu lai...")
             else:
                 if was_lost:
@@ -226,11 +292,11 @@ def main():
                     continue
                 last_id = fid
                 frame = frame.copy()
-                annotate(frame, detector, predictor, thr)
+                annotate(frame, detector, predictor, thr, crop_scale, tracker)
                 now = time.time()
                 fps = 0.9 * fps + 0.1 / max(now - t_prev, 1e-6) if fps else 1 / max(now - t_prev, 1e-6)
                 t_prev = now
-                label = f"FPS: {fps:.1f} | {args.model}"          # nền đen ở góc dưới trái cho dễ đọc
+                label = f"FPS: {fps:.1f} | {args.model}" + (f" | smooth {smooth}" if smooth > 1 else "")          # nền đen ở góc dưới trái cho dễ đọc
                 fh = frame.shape[0]
                 cv2.rectangle(frame, (0, fh - 32), (14 + 11 * len(label), fh), (0, 0, 0), -1)
                 cv2.putText(frame, label, (8, fh - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)

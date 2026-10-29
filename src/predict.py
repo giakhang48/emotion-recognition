@@ -34,13 +34,20 @@ class EmotionPredictor:
         self.model.to(device).eval()
 
     @torch.inference_mode()
-    def predict_batch(self, faces):
-        """faces: list ảnh xám vùng mặt -> list (nhãn, confidence). Dự đoán cả batch một lần."""
+    def proba_batch(self, faces):
+        """faces: list ảnh xám vùng mặt -> mảng (N, số_lớp) xác suất softmax. Dự đoán cả batch một lần."""
         if not faces:
-            return []
+            return np.zeros((0, len(self.classes)), dtype=np.float32)
         x = torch.stack([preprocess(f, self.kind, self.size) for f in faces]).to(self.device)
-        conf, idx = torch.softmax(self.model(x), dim=1).max(dim=1)
-        return [(self.classes[i], float(c)) for i, c in zip(idx.tolist(), conf.tolist())]
+        return torch.softmax(self.model(x), dim=1).cpu().numpy()
+
+    def predict_batch(self, faces):
+        """faces: list ảnh xám vùng mặt -> list (nhãn, confidence)."""
+        out = []
+        for p in self.proba_batch(faces):
+            i = int(p.argmax())
+            out.append((self.classes[i], float(p[i])))
+        return out
 
     def predict(self, face_gray):
         """Dự đoán cho 1 ảnh khuôn mặt (xám) -> (nhãn, confidence)."""
