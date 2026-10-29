@@ -40,10 +40,10 @@ def parse_args():
     ap.add_argument("--config", default=str(ROOT / "config.yaml"))
     ap.add_argument("--weights", default=None, help="ghi đè đường dẫn trọng số trong config")
     ap.add_argument("--save", default=None, help="lưu kết quả (ảnh: .jpg/.png, video: .mp4)")
-    ap.add_argument("--smooth", type=int, default=6,
+    ap.add_argument("--smooth", type=int, default=None,
                     help="làm mượt theo thời gian: trung bình xác suất của N khung gần nhất (1 = tắt; "
                          "mặc định: smoothing_frames trong config.yaml)")
-    ap.add_argument("--crop-scale", type=float, default=0.85,
+    ap.add_argument("--crop-scale", type=float, default=None,
                     help="hệ số thu nhỏ khung cắt mặt quanh tâm khung Haar (1.0 = giữ nguyên, 0.85 = cắt chặt hơn; "
                          "mặc định: face_crop_scale trong config.yaml)")
     ap.add_argument("--no-show", action="store_true", help="không mở cửa sổ (chạy không có màn hình)")
