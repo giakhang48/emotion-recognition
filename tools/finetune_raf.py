@@ -35,6 +35,8 @@ EXT = {".jpg", ".jpeg", ".png", ".bmp"}
 def load_split(root, classes, name_map=None):
     """root/<lớp>/*.jpg -> (list ảnh xám uint8, mảng nhãn theo thứ tự `classes`)."""
     imgs, labels = [], []
+    if not Path(root).is_dir():
+        sys.exit(f"Không thấy thư mục dữ liệu: {root}  (kiểm tra lại đường dẫn, ví dụ bằng !ls)")
     for d in sorted(p for p in Path(root).iterdir() if p.is_dir()):
         name = (name_map or {}).get(d.name, d.name).lower()
         if name not in classes:
@@ -46,6 +48,8 @@ def load_split(root, classes, name_map=None):
                 if g is not None:
                     imgs.append(g)
                     labels.append(classes.index(name))
+    if not imgs:
+        sys.exit(f"Không đọc được ảnh nào trong {root}")
     return imgs, np.array(labels, dtype=np.int64)
 
 
@@ -99,8 +103,10 @@ def check_labels(raf_dir, out="raf_check.png"):
     rows = []
     for k, name in RAF_MAP.items():
         files = sorted((Path(raf_dir) / "train" / k).glob("*.jpg"))[:8]
-        row = [cv2.resize(cv2.imread(str(f)), (100, 100)) for f in files]
-        row = np.hstack(row) if row else np.zeros((100, 800, 3), np.uint8)
+        if not files:
+            sys.exit(f"Không thấy ảnh trong {Path(raf_dir) / 'train' / k}. Kiểm tra lại --raf-dir "
+                     "(phải trỏ tới thư mục DATASET đã giải nén, chứa train/ và test/).")
+        row = np.hstack([cv2.resize(cv2.imread(str(f)), (100, 100)) for f in files])
         cv2.putText(row, f"{k} -> {name}", (4, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         rows.append(row)
     cv2.imwrite(out, np.vstack(rows))
