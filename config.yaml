@@ -4,8 +4,8 @@ camera:
   source: "http://192.168.1.15:8080/video"
 
 models:                      # đường dẫn trọng số (tính từ thư mục gốc project)
-  cnn: weights/cnn.pt        # M1
-  transfer: weights/transfer.pt   # M2
+  cnn: weights/cnn.pt                    # M1 (FER-2013). Bản fine-tune RAF-DB: weights/cnn_raf.pt (M1-R)
+  transfer: weights/transfer_raf.pt      # M2-R (FER-2013 + RAF-DB). Bản FER-2013 gốc: weights/transfer.pt
 
 detector:                    # Haar Cascade
   scale_factor: 1.1
