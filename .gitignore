@@ -1,3 +1,10 @@
 __pycache__/
 .venv/
 .DS_Store
+
+# Dữ liệu RAF-DB (giấy phép: không phân phối lại) và file sinh ra khi kiểm tra
+RAF-DB.zip
+DATASET/
+raf/
+raf_check.png
+webcam_eval/
