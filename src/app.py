@@ -1,7 +1,9 @@
 """Ứng dụng nhận diện cảm xúc realtime.
 Ví dụ:
-  python3 src/app.py --source http://192.168.1.15:8080/video --model cnn
+  python3 src/app.py --source http://192.168.1.8:8081/video --model cnn
   python3 src/app.py --source test.jpg --model transfer
+  python3 src/app.py --source http://192.168.1.8:8081/video --model cnn --weights weights/cnn_raf.pt
+  python3 src/app.py --source http://192.168.1.8:8081/video --model transfer --weights weights/transfer_raf.pt
   python3 src/app.py --source video.mp4 --model cnn
   python3 src/app.py --source 0 --model cnn        (webcam laptop)
 Nhấn 'q' để thoát."""
